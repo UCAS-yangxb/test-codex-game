@@ -136,7 +136,7 @@ npm test
 
 - [ ] 加入关卡编辑器
 - [ ] 支持本地双人对战
-- [ ] 补充 GitHub Actions 自动跑冒烟测试
+- [x] 补充 GitHub Actions 自动跑冒烟测试（`.github/workflows/ci.yml`，每次推送到 `main` 和每个 PR 都会执行 `npm test`）
 
 ## 许可
 
