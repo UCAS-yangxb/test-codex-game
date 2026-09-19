@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#04060d" />
+  <meta name="description" content="霓虹打砖块 · NEON BREAKER —— 一个零依赖、原生 Canvas 编写的霓虹风打砖块小游戏。" />
+  <title>霓虹打砖块 · NEON BREAKER</title>
+  <link rel="stylesheet" href="styles/main.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="hud">
+      <div class="hud__brand">NEON<span>BREAKER</span></div>
+
+      <div class="hud__stats">
+        <div class="stat">
+          <span class="stat__label">得分</span>
+          <span class="stat__value" id="stat-score">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat__label">关卡</span>
+          <span class="stat__value" id="stat-level">1 / 5</span>
+        </div>
+        <div class="stat">
+          <span class="stat__label">生命</span>
+          <span class="stat__value stat__value--lives" id="stat-lives">●●●</span>
+        </div>
+        <div class="stat">
+          <span class="stat__label">最高分</span>
+          <span class="stat__value stat__value--best" id="stat-best">0</span>
+        </div>
+      </div>
+
+      <div class="hud__actions">
+        <button class="icon-btn" id="btn-sound" type="button" aria-pressed="true" title="音效开关 (M)">🔊</button>
+        <button class="icon-btn" id="btn-pause" type="button" title="暂停 / 继续 (P)">⏸</button>
+      </div>
+    </header>
+
+    <main class="stage" id="stage">
+      <canvas id="game" width="900" height="600" aria-label="游戏画面"></canvas>
+
+      <div class="overlay" id="overlay" data-state="menu">
+        <div class="panel">
+          <p class="panel__eyebrow" id="panel-eyebrow">NEON BREAKER</p>
+          <h1 class="panel__title" id="panel-title">霓虹打砖块</h1>
+          <p class="panel__text" id="panel-text">
+            控制挡板接住小球，打碎场上全部砖块即可过关。
+          </p>
+          <div class="panel__keys" id="panel-keys">
+            <span><kbd>鼠标</kbd> 或 <kbd>←</kbd><kbd>→</kbd> 移动挡板</span>
+            <span><kbd>空格</kbd> 发球 / 发射激光</span>
+            <span><kbd>P</kbd> 暂停　<kbd>M</kbd> 静音</span>
+          </div>
+          <button class="cta" id="panel-action" type="button">开始游戏</button>
+          <p class="panel__hint">用挡板两侧击球，可以改变反弹角度。</p>
+        </div>
+      </div>
+
+      <div class="toast" id="toast" aria-live="polite"></div>
+    </main>
+
+    <footer class="foot">
+      <span>原生 Canvas · 零依赖 · 可直接部署到 GitHub Pages</span>
+      <span class="foot__tip">掉落道具：宽 / 分 / 慢 / 命 / 激</span>
+    </footer>
+  </div>
+
+  <script src="src/utils.js"></script>
+  <script src="src/config.js"></script>
+  <script src="src/levels.js"></script>
+  <script src="src/storage.js"></script>
+  <script src="src/audio.js"></script>
+  <script src="src/particles.js"></script>
+  <script src="src/entities.js"></script>
+  <script src="src/input.js"></script>
+  <script src="src/game.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>
