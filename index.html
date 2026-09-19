@@ -15,16 +15,24 @@
 
       <div class="hud__stats">
         <div class="stat">
-          <span class="stat__label">得分</span>
+          <span class="stat__label" id="stat-score-label">得分</span>
           <span class="stat__value" id="stat-score">0</span>
+        </div>
+        <div class="stat" id="stat-score2-wrap" hidden>
+          <span class="stat__label">P2 得分</span>
+          <span class="stat__value stat__value--p2" id="stat-score2">0</span>
         </div>
         <div class="stat">
           <span class="stat__label">关卡</span>
           <span class="stat__value" id="stat-level">1 / 5</span>
         </div>
         <div class="stat">
-          <span class="stat__label">生命</span>
+          <span class="stat__label" id="stat-lives-label">生命</span>
           <span class="stat__value stat__value--lives" id="stat-lives">●●●</span>
+        </div>
+        <div class="stat" id="stat-lives2-wrap" hidden>
+          <span class="stat__label">P2 生命</span>
+          <span class="stat__value stat__value--lives stat__value--p2" id="stat-lives2">●●●</span>
         </div>
         <div class="stat">
           <span class="stat__label">最高分</span>
@@ -53,8 +61,11 @@
             <span><kbd>空格</kbd> 发球 / 发射激光</span>
             <span><kbd>P</kbd> 暂停　<kbd>M</kbd> 静音</span>
           </div>
-          <button class="cta" id="panel-action" type="button">开始游戏</button>
-          <p class="panel__hint">用挡板两侧击球，可以改变反弹角度。</p>
+          <div class="panel__actions">
+            <button class="cta" id="panel-action" type="button">开始游戏</button>
+            <button class="cta cta--ghost" id="panel-versus" type="button" hidden>本地双人对战</button>
+          </div>
+          <p class="panel__hint" id="panel-hint">用挡板两侧击球，可以改变反弹角度。</p>
         </div>
       </div>
 

@@ -30,10 +30,13 @@
       this.lasers = [];
 
       this.best = NB.Storage.getBest();
+      this.mode = 'solo';       // 'solo' 单人闯关 | 'versus' 本地双人对战
       this.state = 'menu';
       this.time = 0;          // 游戏内计时（毫秒），暂停时不增长
       this.score = 0;
-      this.lives = 3;
+      this.lives = C.RULES.lives;
+      this.score2 = 0;
+      this.lives2 = 0;
       this.levelIndex = 0;
       this.levelName = '';
       this.speedBonus = 0;
@@ -44,6 +47,12 @@
       this.combo = 0;
       this.comboTimer = 0;
       this.paddleDir = 0;
+      this.paddle2 = null;      // 双人对战里的上方挡板
+      this.paddle2Dir = 0;
+      this.server = 1;          // 这一球由谁发：1 下方 / 2 上方
+      this.lastHitter = 1;      // 最后击球者，砖块得分算给他
+      this.winner = 0;          // 双人对战胜者：1 / 2，单人为 0
+      this.exitedSide = null;   // 最后一个出界的球从哪边漏的
       this.lastLaserAt = -Infinity;
       this.menuTimer = 0;
 
@@ -61,9 +70,14 @@
       if (this.hooks.onToast) this.hooks.onToast(text);
     }
 
-    startRun() {
+    /** mode 省略时沿用当前模式，保证“再来一局”不会跳回单人 */
+    startRun(mode) {
+      if (mode === 'solo' || mode === 'versus') this.mode = mode;
+
       this.score = 0;
-      this.lives = 3;
+      this.score2 = 0;
+      this.lives = C.RULES.lives;
+      this.lives2 = C.RULES.lives;
       this.time = 0;
       this.speedBonus = 0;
       this.speedScale = 1;
@@ -72,11 +86,17 @@
       this.comboTimer = 0;
       this.shake = 0;
       this.flash = 0;
+      this.server = 1;
+      this.lastHitter = 1;
+      this.winner = 0;
+      this.paddleDir = 0;
+      this.paddle2Dir = 0;
 
       this.powerups.length = 0;
       this.lasers.length = 0;
       this.particles.clear();
       this.paddle.reset();
+      this.paddle2 = this.mode === 'versus' ? new NB.Paddle('top') : null;
       this.loadLevel(0);
       this.resetBallOnPaddle();
 
@@ -86,7 +106,7 @@
     }
 
     /** 统一的“主按钮 / 空格”入口，按当前状态决定该做什么 */
-    launch() {
+    launch(player) {
       switch (this.state) {
         case 'menu':
         case 'gameover':
@@ -103,7 +123,7 @@
           this.releaseBalls();
           break;
         case 'playing':
-          this.fireLaser();
+          this.fireLaser(player);
           break;
         default:
           break;
@@ -112,9 +132,11 @@
 
     releaseBalls() {
       const speed = this.currentBallSpeed();
+      const paddle = this.servePaddle();
+      this.lastHitter = this.playerOf(paddle);
       for (const ball of this.balls) {
         if (!ball.stuck) continue;
-        ball.launch(speed, U.rand(-0.5, 0.5));
+        ball.launch(speed, U.rand(-0.5, 0.5), paddle.facing);
       }
       this.state = 'playing';
       this.sound.play('launch');
@@ -140,6 +162,10 @@
       this.slowUntil = 0;
       this.powerups.length = 0;
       this.lasers.length = 0;
+      this.server = 1;
+      this.lastHitter = 1;
+      this.paddle2Dir = 0;
+      if (this.paddle2) this.paddle2.reset();
       this.loadLevel(this.levelIndex);
       this.resetBallOnPaddle();
       this.state = 'ready';
@@ -158,6 +184,10 @@
 
       const totalWidth = cfg.cols * cfg.width + (cfg.cols - 1) * cfg.gapX;
       const left = (C.WIDTH - totalWidth) / 2;
+      // 双人对战：砖墙摆到正中间，让上下两名玩家的活动空间对称
+      const rows = level.rows.length;
+      const fieldHeight = rows * cfg.height + (rows - 1) * cfg.gapY;
+      const top = this.mode === 'versus' ? Math.round((C.HEIGHT - fieldHeight) / 2) : cfg.top;
 
       level.rows.forEach((row, r) => {
         for (let c = 0; c < cfg.cols; c++) {
@@ -165,7 +195,7 @@
           if (char === '.') continue;
 
           const x = left + c * (cfg.width + cfg.gapX);
-          const y = cfg.top + r * (cfg.height + cfg.gapY);
+          const y = top + r * (cfg.height + cfg.gapY);
           const unbreakable = char === 'X';
           const hp = unbreakable ? 1 : U.clamp(Number(char) || 1, 1, 3);
 
@@ -174,10 +204,32 @@
       });
     }
 
+    /** 当前该由哪块挡板发球 */
+    servePaddle() {
+      return this.mode === 'versus' && this.server === 2 && this.paddle2 ? this.paddle2 : this.paddle;
+    }
+
+    /** 这块挡板属于哪位玩家 */
+    playerOf(paddle) {
+      return this.mode === 'versus' && paddle === this.paddle2 ? 2 : 1;
+    }
+
+    /** 当前场上所有挡板 */
+    activePaddles() {
+      return this.paddle2 ? [this.paddle, this.paddle2] : [this.paddle];
+    }
+
     resetBallOnPaddle() {
+      this.exitedSide = null;
       const ball = new NB.Ball();
-      ball.attach(this.paddle.centerX, this.paddle.y - ball.radius - 2);
+      this.attachBall(ball, this.servePaddle());
       this.balls = [ball];
+    }
+
+    /** 把球贴在挡板朝向球场的那一侧 */
+    attachBall(ball, paddle) {
+      const offset = ball.radius + 2;
+      ball.attach(paddle.centerX, paddle.side === 'top' ? paddle.y + paddle.height + offset : paddle.y - offset);
     }
 
     /* --------------------------------- 更新 --------------------------------- */
@@ -203,11 +255,9 @@
         this.slowUntil = 0;
         this.speedScale = 1;
       }
-      if (this.paddle.wideUntil > 0 && this.time > this.paddle.wideUntil) {
-        this.paddle.resetWidth();
-      }
-      if (this.paddle.laserUntil > 0 && this.time > this.paddle.laserUntil) {
-        this.paddle.laserUntil = 0;
+      for (const paddle of this.activePaddles()) {
+        if (paddle.wideUntil > 0 && this.time > paddle.wideUntil) paddle.resetWidth();
+        if (paddle.laserUntil > 0 && this.time > paddle.laserUntil) paddle.laserUntil = 0;
       }
       if (this.comboTimer > 0) {
         this.comboTimer -= dt;
@@ -215,10 +265,11 @@
       }
 
       this.paddle.update(dt, this.paddleDir);
+      if (this.paddle2) this.paddle2.update(dt, this.paddle2Dir);
 
       if (this.state === 'ready') {
         const ball = this.balls[0];
-        if (ball) ball.attach(this.paddle.centerX, this.paddle.y - ball.radius - 2);
+        if (ball) this.attachBall(ball, this.servePaddle());
       }
 
       this.updateBalls(dt);
@@ -270,16 +321,25 @@
         for (let s = 0; s < steps && !ball.dead; s++) {
           ball.update(stepDt);
           this.collideWalls(ball);
-          this.collidePaddle(ball);
+          this.collidePaddle(ball, this.paddle, 1);
+          if (this.paddle2) this.collidePaddle(ball, this.paddle2, 2);
           this.collideBricks(ball);
-          if (ball.y - ball.radius > C.HEIGHT + 30) ball.dead = true;
+          if (ball.y - ball.radius > C.HEIGHT + 30) {
+            ball.dead = true;
+            this.exitedSide = 'bottom';
+          } else if (this.mode === 'versus' && ball.y + ball.radius < -30) {
+            ball.dead = true;
+            this.exitedSide = 'top';
+          }
         }
 
         ball.pushTrail();
         if (ball.dead) this.balls.splice(i, 1);
       }
 
-      if (this.balls.length === 0 && this.state === 'playing') this.loseLife();
+      if (this.balls.length === 0 && this.state === 'playing') {
+        this.loseLife(this.exitedSide === 'top' ? 2 : 1);
+      }
     }
 
     collideWalls(ball) {
@@ -296,7 +356,8 @@
         bounced = true;
       }
 
-      if (ball.y - r < 0) {
+      // 双人对战里上方没有墙，球从顶端飞出去就是上方玩家漏球
+      if (ball.y - r < 0 && this.mode !== 'versus') {
         ball.y = r;
         ball.vy = Math.abs(ball.vy);
         bounced = true;
@@ -308,14 +369,15 @@
       this.particles.burst(ball.x, ball.y, '#7dd3fc', 5, { speed: 130, life: 0.3, size: 2, gravity: 120 });
     }
 
-    collidePaddle(ball) {
-      const paddle = this.paddle;
-      if (ball.vy <= 0) return;
+    collidePaddle(ball, paddle, player) {
+      const isTop = paddle.side === 'top';
+      // 上方挡板只在球往上飞时接球，下方挡板只在球往下落时接球
+      if (isTop ? ball.vy >= 0 : ball.vy <= 0) return;
 
       const hit = U.circleRect(ball.x, ball.y, ball.radius, paddle.x, paddle.y, paddle.width, paddle.height);
       if (!hit) return;
 
-      ball.y = paddle.y - ball.radius - 0.01;
+      ball.y = isTop ? paddle.y + paddle.height + ball.radius + 0.01 : paddle.y - ball.radius - 0.01;
 
       const speed = ball.speed || this.currentBallSpeed();
       const offset = U.clamp((ball.x - paddle.centerX) / (paddle.width / 2), -1, 1);
@@ -327,8 +389,9 @@
       if (Math.abs(angle) < minAngle) angle = (offset >= 0 ? 1 : -1) * minAngle;
 
       ball.vx = Math.sin(angle) * speed;
-      ball.vy = -Math.cos(angle) * speed;
+      ball.vy = paddle.facing * Math.cos(angle) * speed;
 
+      this.lastHitter = player;
       this.sound.play('paddle');
       this.shake = Math.max(this.shake, 2.5);
       this.particles.burst(ball.x, paddle.y, C.COLORS.paddle, 8, {
@@ -336,7 +399,7 @@
         life: 0.35,
         size: 2.6,
         gravity: 320,
-        angle: -Math.PI / 2,
+        angle: isTop ? Math.PI / 2 : -Math.PI / 2,
         spread: 2.4,
       });
     }
@@ -364,7 +427,14 @@
       }
     }
 
-    damageBrick(brick, hitX, hitY) {
+    /** 加分：双人对战里算给最后击球者；显式传入 player 时以传入的为准（激光） */
+    award(points, player) {
+      const who = player || (this.mode === 'versus' ? this.lastHitter : 1);
+      if (who === 2) this.score2 += points;
+      else this.score += points;
+    }
+
+    damageBrick(brick, hitX, hitY, player) {
       const color = brick.color;
 
       if (brick.unbreakable) {
@@ -381,7 +451,7 @@
       if (!destroyed) {
         this.sound.play('brick');
         this.particles.burst(hx, hy, color, 7, { speed: 170, life: 0.3, size: 2.2, gravity: 340 });
-        this.score += 8;
+        this.award(8, player);
         return;
       }
 
@@ -396,7 +466,7 @@
       this.combo += 1;
       this.comboTimer = 2.4;
       const multiplier = 1 + Math.min(Math.floor(this.combo / 3), 4) * 0.5; // 最高 3 倍
-      this.score += Math.round(brick.score * multiplier);
+      this.award(Math.round(brick.score * multiplier), player);
 
       if (this.combo > 0 && this.combo % 6 === 0) {
         this.toast(`连击 ×${Math.round(multiplier * 10) / 10}　得分加成中`);
@@ -412,14 +482,20 @@
     maybeDropPowerUp(x, y) {
       if (U.rand(0, 1) > C.POWERUP.dropChance) return;
       const type = U.pickWeighted(C.POWERUP.weights);
-      this.powerups.push(new NB.PowerUp(x, y, type));
+      if (this.mode === 'versus') {
+        // 朝两侧各掉一个，保证双方机会均等
+        this.powerups.push(new NB.PowerUp(x, y, type, 1), new NB.PowerUp(x, y, type, -1));
+      } else {
+        this.powerups.push(new NB.PowerUp(x, y, type));
+      }
     }
 
     checkLevelClear() {
       const remaining = this.bricks.some((brick) => !brick.dead && !brick.unbreakable);
       if (remaining) return;
 
-      this.score += 500 + this.lives * 200;
+      const bonus = 500 + (this.mode === 'versus' ? this.lives + this.lives2 : this.lives) * 200;
+      this.award(bonus, this.mode === 'versus' ? this.lastHitter : 1);
       this.particles.burst(C.WIDTH / 2, C.HEIGHT / 2, '#7dd3fc', 40, {
         speed: 420,
         life: 1.1,
@@ -428,7 +504,11 @@
       });
       this.flash = 0.7;
 
-      if (this.levelIndex >= NB.Levels.count - 1) {
+      if (this.mode === 'versus') {
+        // 对战没有终点：砖墙清空就换下一关，比分继续累积
+        this.state = 'levelclear';
+        this.sound.play('levelclear');
+      } else if (this.levelIndex >= NB.Levels.count - 1) {
         this.state = 'win';
         this.saveBest();
         this.sound.play('levelclear');
@@ -440,8 +520,10 @@
       this.emitState();
     }
 
-    loseLife() {
-      this.lives -= 1;
+    loseLife(player = 1) {
+      const who = this.mode === 'versus' && player === 2 ? 2 : 1;
+      if (who === 2) this.lives2 -= 1;
+      else this.lives -= 1;
       this.speedBonus = Math.max(0, this.speedBonus - 14);
       this.combo = 0;
       this.comboTimer = 0;
@@ -450,14 +532,20 @@
       this.sound.play('lose');
       this.powerups.length = 0;
 
-      if (this.lives <= 0) {
+      const remaining = who === 2 ? this.lives2 : this.lives;
+
+      if (remaining <= 0) {
         this.state = 'gameover';
-        this.saveBest();
+        this.winner = this.mode === 'versus' ? (who === 2 ? 1 : 2) : 0;
+        if (this.mode !== 'versus') this.saveBest();
         this.sound.play('gameover');
       } else {
+        this.server = who;
         this.state = 'ready';
         this.resetBallOnPaddle();
-        this.toast(`球掉下去了，还剩 ${this.lives} 条命`);
+        this.toast(
+          this.mode === 'versus' ? `P${who} 漏球，还剩 ${remaining} 条命` : `球掉下去了，还剩 ${this.lives} 条命`
+        );
       }
       this.emitState();
     }
@@ -470,11 +558,16 @@
     /* -------------------------------- 道具与激光 ------------------------------- */
 
     updatePowerups(dt) {
-      const paddle = this.paddle;
-
       for (let i = this.powerups.length - 1; i >= 0; i--) {
         const item = this.powerups[i];
         item.update(dt);
+
+        // dir < 0 的道具往上方飘，归上方玩家接
+        const paddle = item.dir < 0 ? this.paddle2 : this.paddle;
+        if (!paddle) {
+          this.powerups.splice(i, 1);
+          continue;
+        }
 
         const caught =
           item.y + item.size > paddle.y &&
@@ -483,7 +576,7 @@
           item.x < paddle.x + paddle.width;
 
         if (caught) {
-          this.collectPowerUp(item);
+          this.collectPowerUp(item, this.playerOf(paddle));
           this.powerups.splice(i, 1);
         } else if (item.dead) {
           this.powerups.splice(i, 1);
@@ -491,10 +584,13 @@
       }
     }
 
-    collectPowerUp(item) {
-      this.score += 50;
+    collectPowerUp(item, player) {
+      const who = this.mode === 'versus' && player === 2 ? 2 : 1;
+      const paddle = who === 2 ? this.paddle2 : this.paddle;
+
+      this.award(50, who);
       this.sound.play('powerup');
-      this.toast(item.toast);
+      this.toast(this.mode === 'versus' ? `P${who} ${item.toast}` : item.toast);
       this.particles.burst(item.centerX, item.centerY, item.color, 18, {
         speed: 260,
         life: 0.6,
@@ -504,7 +600,7 @@
 
       switch (item.type) {
         case 'expand':
-          this.paddle.applyWide(this.time);
+          paddle.applyWide(this.time);
           break;
         case 'multi':
           this.splitBalls();
@@ -514,10 +610,11 @@
           this.slowUntil = this.time + C.POWERUP.duration;
           break;
         case 'life':
-          this.lives += 1;
+          if (who === 2) this.lives2 = Math.min(this.lives2 + 1, C.RULES.maxLives);
+          else this.lives = Math.min(this.lives + 1, C.RULES.maxLives);
           break;
         case 'laser':
-          this.paddle.applyLaser(this.time);
+          paddle.applyLaser(this.time);
           break;
         default:
           break;
@@ -542,14 +639,17 @@
       this.balls.push(...extras);
     }
 
-    fireLaser() {
-      const paddle = this.paddle;
-      if (!paddle.isLaserActive) return;
+    fireLaser(player) {
+      const who = this.mode === 'versus' && player === 2 ? 2 : 1;
+      const paddle = who === 2 ? this.paddle2 : this.paddle;
+      if (!paddle || !paddle.isLaserActive) return;
       if (this.time - this.lastLaserAt < C.PADDLE.laserCooldown) return;
 
       this.lastLaserAt = this.time;
+      // 激光永远朝球场内侧发射：下方玩家向上，上方玩家向下
+      const y = paddle.side === 'top' ? paddle.y + paddle.height + 6 : paddle.y - 6;
       for (const x of paddle.emitterPoints) {
-        this.lasers.push({ x, y: paddle.y - 6, vy: -980, w: 4, h: 20, dead: false });
+        this.lasers.push({ x, y, vy: paddle.facing * 980, w: 4, h: 20, dead: false, owner: who });
       }
       this.sound.play('laser');
     }
@@ -559,7 +659,7 @@
         const laser = this.lasers[i];
         laser.y += laser.vy * dt;
 
-        if (laser.y + laser.h < 0) {
+        if (laser.y + laser.h < 0 || laser.y > C.HEIGHT) {
           this.lasers.splice(i, 1);
           continue;
         }
@@ -570,7 +670,7 @@
           if (laser.x < brick.x || laser.x > brick.x + brick.w) continue;
           if (laser.y > brick.y + brick.h || laser.y + laser.h < brick.y) continue;
 
-          this.damageBrick(brick, laser.x, laser.y);
+          this.damageBrick(brick, laser.x, laser.y, laser.owner);
           consumed = true;
           break;
         }
@@ -594,8 +694,10 @@
       this.drawPowerups(ctx);
       this.drawLasers(ctx);
       if (this.state !== 'menu') {
-        this.drawPaddle(ctx);
+        this.drawPaddle(ctx, this.paddle, 1);
+        if (this.paddle2) this.drawPaddle(ctx, this.paddle2, 2);
         this.drawBalls(ctx);
+        if (this.paddle2) this.drawPlayerTags(ctx);
       }
       this.particles.render(ctx);
       ctx.restore();
@@ -701,17 +803,20 @@
       }
     }
 
-    drawPaddle(ctx) {
-      const paddle = this.paddle;
+    drawPaddle(ctx, paddle, player) {
+      const skin =
+        player === 2
+          ? { core: C.COLORS.paddle2, light: '#fbcfe8', dark: '#9d174d' }
+          : { core: C.COLORS.paddle, light: '#bae6fd', dark: '#0369a1' };
 
       ctx.save();
-      ctx.shadowColor = C.COLORS.paddle;
+      ctx.shadowColor = skin.core;
       ctx.shadowBlur = 20;
 
       const gradient = ctx.createLinearGradient(paddle.x, paddle.y, paddle.x, paddle.y + paddle.height);
-      gradient.addColorStop(0, '#bae6fd');
-      gradient.addColorStop(0.5, C.COLORS.paddle);
-      gradient.addColorStop(1, '#0369a1');
+      gradient.addColorStop(0, skin.light);
+      gradient.addColorStop(0.5, skin.core);
+      gradient.addColorStop(1, skin.dark);
       ctx.fillStyle = gradient;
       U.roundRect(ctx, paddle.x, paddle.y, paddle.width, paddle.height, paddle.height / 2);
       ctx.fill();
@@ -722,11 +827,30 @@
         ctx.shadowColor = C.COLORS.laser;
         ctx.shadowBlur = 14;
         ctx.fillStyle = C.COLORS.laser;
+        const emitterY = paddle.side === 'top' ? paddle.y + paddle.height - 1 : paddle.y - 7;
         for (const x of paddle.emitterPoints) {
-          ctx.fillRect(x - 2, paddle.y - 7, 4, 8);
+          ctx.fillRect(x - 2, emitterY, 4, 8);
         }
         ctx.restore();
       }
+    }
+
+    /** 双人对战：在左侧标出两块挡板分别属于谁 */
+    drawPlayerTags(ctx) {
+      ctx.save();
+      ctx.font = 'bold 13px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+
+      ctx.fillStyle = C.COLORS.paddle;
+      ctx.shadowColor = C.COLORS.paddle;
+      ctx.shadowBlur = 12;
+      ctx.fillText('P1', 14, this.paddle.y + this.paddle.height / 2);
+
+      ctx.fillStyle = C.COLORS.paddle2;
+      ctx.shadowColor = C.COLORS.paddle2;
+      ctx.fillText('P2', 14, this.paddle2.y + this.paddle2.height / 2);
+      ctx.restore();
     }
 
     drawBalls(ctx) {

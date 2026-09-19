@@ -15,6 +15,7 @@
       width: 132,
       height: 16,
       y: 552,
+      yTop: 32,              // 双人对战：上方玩家的挡板高度
       followLerp: 20,        // 鼠标跟随的平滑系数，越大越跟手
       keyAccel: 5400,        // 键盘加速度 px/s²
       keyMaxSpeed: 980,
@@ -62,6 +63,7 @@
     COLORS: {
       brick: { 1: '#22d3ee', 2: '#a855f7', 3: '#f59e0b', 9: '#64748b' },
       paddle: '#38bdf8',
+      paddle2: '#f472b6',
       ball: '#f8fafc',
       ballGlow: '#7dd3fc',
       laser: '#fbbf24',
@@ -72,6 +74,12 @@
         life: '#f472b6',
         laser: '#fbbf24',
       },
+    },
+
+    // 通用规则
+    RULES: {
+      lives: 3,
+      maxLives: 5,
     },
   };
 })(window);

@@ -276,6 +276,34 @@ kbd {
   transform: translateY(1px) scale(0.99);
 }
 
+.panel__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cta--ghost {
+  background: transparent;
+  border: 1px solid rgba(244, 114, 182, 0.55);
+  color: #f9a8d4;
+  box-shadow: none;
+}
+
+.cta--ghost:hover {
+  filter: none;
+  background: rgba(244, 114, 182, 0.14);
+  box-shadow: 0 0 24px rgba(244, 114, 182, 0.22);
+}
+
+.cta[hidden],
+.stat[hidden] {
+  display: none;
+}
+
+.stat__value--p2 {
+  color: #f9a8d4;
+}
+
 .panel__hint {
   margin: 14px 0 0;
   font-size: 12px;

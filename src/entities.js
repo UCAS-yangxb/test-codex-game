@@ -11,7 +11,9 @@
   /* ---------------------------------- 挡板 ---------------------------------- */
 
   class Paddle {
-    constructor() {
+    /** side = 'bottom' 下方玩家（默认），'top' 双人对战里的上方玩家 */
+    constructor(side = 'bottom') {
+      this.side = side === 'top' ? 'top' : 'bottom';
       this.pointerActive = false;
       this.keyboardActive = false;
       this.reset();
@@ -21,7 +23,7 @@
       const cfg = C.PADDLE;
       this.width = cfg.width;
       this.height = cfg.height;
-      this.y = cfg.y;
+      this.y = this.side === 'top' ? cfg.yTop : cfg.y;
       this.x = (C.WIDTH - this.width) / 2;
       this.vx = 0;
       this.targetX = this.x;
@@ -37,6 +39,11 @@
 
     get isLaserActive() {
       return this.laserUntil > 0;
+    }
+
+    /** 挡板朝向球场内侧的方向：下方玩家向上，上方玩家向下 */
+    get facing() {
+      return this.side === 'top' ? 1 : -1;
     }
 
     setPointer(logicalX) {
@@ -121,9 +128,10 @@
       this.trail.length = 0;
     }
 
-    launch(speed, angle) {
+    /** vySign = -1 向上（默认，下方玩家发球），+1 向下（上方玩家发球） */
+    launch(speed, angle, vySign = -1) {
       this.vx = Math.sin(angle) * speed;
-      this.vy = -Math.cos(angle) * speed;
+      this.vy = vySign * Math.cos(angle) * speed;
       this.stuck = false;
     }
 
@@ -211,11 +219,16 @@
   };
 
   class PowerUp {
-    constructor(x, y, type) {
+    /**
+     * dir = +1 向下掉落（下方玩家接），-1 向上飘（上方玩家接）。
+     * 双人对战里同一个砖块会朝两侧各掉一个，保证两边机会均等。
+     */
+    constructor(x, y, type, dir = 1) {
       this.size = C.POWERUP.size;
       this.x = x - this.size / 2;
       this.y = y - this.size / 2;
       this.type = type;
+      this.dir = dir < 0 ? -1 : 1;
       this.dead = false;
       this.spin = U.rand(0, Math.PI * 2);
     }
@@ -241,9 +254,13 @@
     }
 
     update(dt) {
-      this.y += C.POWERUP.fallSpeed * dt;
+      this.y += C.POWERUP.fallSpeed * this.dir * dt;
       this.spin += dt * 2.4;
-      if (this.y > C.HEIGHT + this.size) this.dead = true;
+      if (this.dir < 0) {
+        if (this.y + this.size < 0) this.dead = true;
+      } else if (this.y > C.HEIGHT + this.size) {
+        this.dead = true;
+      }
     }
   }
 

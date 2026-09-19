@@ -8,6 +8,7 @@
  *   2. 菜单 → 发球 → 对局的状态流转正确；
  *   3. 挡板自动跟球时能真的打碎砖块并推进关卡；
  *   4. 不接球时生命会递减，最终进入 gameover。
+ *   5. 本地双人对战：两块挡板、镜像道具、漏球扣命、胜负判定。
  *
  * 用法：npm test   （或者 node tools/smoke-test.js）
  */
@@ -325,6 +326,146 @@ if (game.state !== 'gameover') {
   check('生命耗尽后进入结算界面', game.state === 'gameover', game.state);
   check('本局得分被记录为最高分', game.best >= game.score, `最高分 ${game.best}`);
 }
+
+/* -------------------------------- 双人对战 -------------------------------- */
+
+console.log('');
+
+game.startRun('versus');
+check('切到双人对战会多出一块上方挡板', game.mode === 'versus' && Boolean(game.paddle2));
+check(
+  '两块挡板分守上下两端',
+  game.paddle.y > NB.Config.HEIGHT / 2 && game.paddle2.y < NB.Config.HEIGHT / 2,
+  `P1 y=${game.paddle.y} / P2 y=${game.paddle2.y}`
+);
+check(
+  '对战里砖墙被摆到球场正中间',
+  game.bricks.length > 0 && game.bricks.every((brick) => brick.y > 150 && brick.y < 420),
+  `${game.bricks.length} 块`
+);
+check(
+  '待发球时球贴在发球方挡板内侧',
+  game.balls.length === 1 && game.balls[0].stuck && game.balls[0].y < game.paddle.y,
+  `球 y=${Math.round(game.balls[0].y)}`
+);
+
+// 两块挡板都追着球跑，看对战能不能真打起来
+game.launch(1);
+let sawP2Hit = false;
+let maxScore2 = 0;
+for (let frame = 0; frame < 60 * 240; frame++) {
+  const ball = game.balls[0];
+  if (ball) {
+    const aim = frame % 240 < 120 ? 0.6 : -0.6;
+    game.paddle.setPointer(ball.x - aim * game.paddle.width * 0.5);
+    game.paddle2.setPointer(ball.x - aim * game.paddle2.width * 0.5);
+  }
+  if (game.state === 'ready' || game.state === 'levelclear') game.launch();
+  tick();
+
+  if (game.lastHitter === 2) sawP2Hit = true;
+  maxScore2 = Math.max(maxScore2, game.score2);
+  if (game.state === 'gameover') break;
+}
+
+check('两个玩家来回对打（上方挡板能把球打回去）', sawP2Hit);
+check('砖块得分记在最后击球者名下', maxScore2 > 0, `P2 得分 ${maxScore2}`);
+
+// 对战没有终点：清空砖墙应该进入下一关
+game.startRun('versus');
+game.bricks.forEach((brick) => {
+  if (!brick.unbreakable) brick.dead = true;
+});
+game.checkLevelClear();
+check('对战中清空砖墙进入下一关而不是通关', game.state === 'levelclear', game.state);
+
+// 镜像道具
+game.startRun('versus');
+game.powerups.length = 0;
+let dropGuard = 0;
+while (game.powerups.length === 0 && dropGuard++ < 300) game.maybeDropPowerUp(450, 300);
+const upward = game.powerups.filter((item) => item.dir < 0);
+const downward = game.powerups.filter((item) => item.dir > 0);
+check('对战里掉落道具会朝上下两侧各生成一个', upward.length === 1 && downward.length === 1, `${game.powerups.length} 个`);
+
+const mirrorUp = new NB.PowerUp(450, 300, 'expand', -1);
+const mirrorDown = new NB.PowerUp(450, 300, 'expand', 1);
+for (let i = 0; i < 60; i++) {
+  mirrorUp.update(1 / 60);
+  mirrorDown.update(1 / 60);
+}
+check('镜像道具分别朝上下离开', mirrorUp.y < 300 && mirrorDown.y > 300, `上 ${Math.round(mirrorUp.y)} / 下 ${Math.round(mirrorDown.y)}`);
+
+// 漏球判定：把球直接放到挡板身后，看它飞出去之后算谁漏
+function forceExit(side) {
+  game.startRun('versus');
+  game.state = 'playing';
+  const ball = game.balls[0];
+  ball.stuck = false;
+  ball.trail.length = 0;
+  ball.x = NB.Config.WIDTH / 2;
+  ball.vx = 0;
+  if (side === 'top') {
+    ball.y = 20;
+    ball.vy = -520;
+  } else {
+    ball.y = NB.Config.HEIGHT - 20;
+    ball.vy = 520;
+  }
+}
+
+forceExit('top');
+const p2LivesBefore = game.lives2;
+runFrames(24);
+check('球从顶端飞出去算上方玩家漏球', game.lives2 === p2LivesBefore - 1, `P2 生命 ${p2LivesBefore} → ${game.lives2}`);
+check('漏球之后由漏球方发球', game.state === 'ready' && game.server === 2, `状态 ${game.state} / server ${game.server}`);
+check(
+  '上方玩家发球时球粘在上方挡板下沿',
+  game.balls[0].y > game.paddle2.y && game.balls[0].y < game.paddle2.y + 40,
+  `球 y=${Math.round(game.balls[0].y)}`
+);
+
+forceExit('bottom');
+const p1LivesBefore = game.lives;
+runFrames(24);
+check('球从底端飞出去算下方玩家漏球', game.lives === p1LivesBefore - 1, `P1 生命 ${p1LivesBefore} → ${game.lives}`);
+
+forceExit('top');
+game.lives2 = 1;
+runFrames(24);
+check('上方玩家命耗尽时对手获胜', game.state === 'gameover' && game.winner === 1, `状态 ${game.state} / 胜者 P${game.winner}`);
+
+forceExit('bottom');
+game.lives = 1;
+runFrames(24);
+check('下方玩家命耗尽时上方玩家获胜', game.state === 'gameover' && game.winner === 2, `状态 ${game.state} / 胜者 P${game.winner}`);
+
+// 回到单人模式应该收掉上方挡板，避免旧状态残留
+game.startRun('solo');
+check('切回单人模式会收掉上方挡板', game.mode === 'solo' && game.paddle2 === null, `mode=${game.mode}`);
+
+// 真实的按钮路径：菜单里点「本地双人对战」直接开局，再点一次切回单人
+game.startRun('solo');
+tick(); // HUD 是每帧同步的，推进一帧让它反映当前模式
+check('单人模式下 P2 的 HUD 不显示', element('stat-score2-wrap').hidden && element('stat-lives2-wrap').hidden);
+
+element('panel-versus').dispatch('click');
+tick();
+check(
+  '点菜单里的「本地双人对战」能直接开一局对战',
+  game.mode === 'versus' && game.state === 'ready' && Boolean(game.paddle2),
+  `mode=${game.mode} / 状态 ${game.state}`
+);
+check('对战时 P2 的得分与生命会显示在 HUD 上', !element('stat-score2-wrap').hidden && !element('stat-lives2-wrap').hidden);
+
+element('panel-versus').dispatch('click');
+tick();
+check(
+  '再点一次切回单人闯关',
+  game.mode === 'solo' && game.state === 'ready' && game.paddle2 === null,
+  `mode=${game.mode}`
+);
+check('切回单人后 P2 的 HUD 会隐藏', element('stat-score2-wrap').hidden);
 
 /* --------------------------------- 汇总 --------------------------------- */
 

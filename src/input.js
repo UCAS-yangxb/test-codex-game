@@ -6,15 +6,23 @@
 
   const NB = (global.NB = global.NB || {});
 
-  const LEFT_KEYS = ['ArrowLeft', 'KeyA'];
-  const RIGHT_KEYS = ['ArrowRight', 'KeyD'];
+  // 单人：WASD 与方向键都控制同一块挡板
+  // 双人：上方玩家用 A / D，下方玩家用 ← / →
+  const P1_LEFT = ['KeyA'];
+  const P1_RIGHT = ['KeyD'];
+  const P2_LEFT = ['ArrowLeft'];
+  const P2_RIGHT = ['ArrowRight'];
+  const DIRECTION_CODES = [...P1_LEFT, ...P1_RIGHT, ...P2_LEFT, ...P2_RIGHT];
 
   /**
-   * handlers: { onMove(logicalX), onAction(), onPause(), onMute(), onDirection(-1|0|1) }
+   * handlers: { onMove(logicalX), onAction(player), onPause(), onMute(), onDirection(-1|0|1, player) }
    * 返回一个 detach() 用于解绑全部监听。
    */
   function attach(stage, canvas, handlers) {
-    const held = { left: false, right: false };
+    const held = {
+      1: { left: false, right: false },
+      2: { left: false, right: false },
+    };
 
     function toLogicalX(clientX) {
       const rect = canvas.getBoundingClientRect();
@@ -23,9 +31,10 @@
       return ratio * NB.Config.WIDTH;
     }
 
-    function syncDirection() {
-      const direction = (held.right ? 1 : 0) - (held.left ? 1 : 0);
-      handlers.onDirection(direction);
+    function syncDirection(player) {
+      const state = held[player];
+      const direction = (state.right ? 1 : 0) - (state.left ? 1 : 0);
+      handlers.onDirection(direction, player);
     }
 
     function handlePointerMove(event) {
@@ -41,23 +50,34 @@
 
     function handleKeyDown(event) {
       if (event.repeat) {
-        // 长按方向键已经在 held 里记录了，这里直接吃掉重复事件
-        if (LEFT_KEYS.includes(event.code) || RIGHT_KEYS.includes(event.code) || event.code === 'Space') {
+        // 长按已经在 held 里记录了，这里直接吃掉重复事件
+        if (DIRECTION_CODES.includes(event.code) || event.code === 'Space' || event.code === 'Enter') {
           event.preventDefault();
         }
         return;
       }
 
-      if (LEFT_KEYS.includes(event.code)) {
-        held.left = true;
-        syncDirection();
+      if (P1_LEFT.includes(event.code)) {
+        held[1].left = true;
+        syncDirection(1);
         event.preventDefault();
-      } else if (RIGHT_KEYS.includes(event.code)) {
-        held.right = true;
-        syncDirection();
+      } else if (P1_RIGHT.includes(event.code)) {
+        held[1].right = true;
+        syncDirection(1);
         event.preventDefault();
-      } else if (event.code === 'Space' || event.code === 'Enter') {
-        handlers.onAction();
+      } else if (P2_LEFT.includes(event.code)) {
+        held[2].left = true;
+        syncDirection(2);
+        event.preventDefault();
+      } else if (P2_RIGHT.includes(event.code)) {
+        held[2].right = true;
+        syncDirection(2);
+        event.preventDefault();
+      } else if (event.code === 'Space') {
+        handlers.onAction(1);
+        event.preventDefault();
+      } else if (event.code === 'Enter') {
+        handlers.onAction(2);
         event.preventDefault();
       } else if (event.code === 'KeyP' || event.code === 'Escape') {
         handlers.onPause();
@@ -69,19 +89,27 @@
     }
 
     function handleKeyUp(event) {
-      if (LEFT_KEYS.includes(event.code)) {
-        held.left = false;
-        syncDirection();
-      } else if (RIGHT_KEYS.includes(event.code)) {
-        held.right = false;
-        syncDirection();
+      if (P1_LEFT.includes(event.code)) {
+        held[1].left = false;
+        syncDirection(1);
+      } else if (P1_RIGHT.includes(event.code)) {
+        held[1].right = false;
+        syncDirection(1);
+      } else if (P2_LEFT.includes(event.code)) {
+        held[2].left = false;
+        syncDirection(2);
+      } else if (P2_RIGHT.includes(event.code)) {
+        held[2].right = false;
+        syncDirection(2);
       }
     }
 
     function handleBlur() {
-      held.left = false;
-      held.right = false;
-      syncDirection();
+      for (const player of [1, 2]) {
+        held[player].left = false;
+        held[player].right = false;
+        syncDirection(player);
+      }
     }
 
     stage.addEventListener('pointermove', handlePointerMove);
